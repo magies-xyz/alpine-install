@@ -2,7 +2,7 @@
 set -eu
 USER_NAME="${1:-lima}"
 DWM_REPO="https://github.com/tonybanters/dwm"
-INSTALL_PKGS="xorg-server xinit xf86-video-intel xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi"
+INSTALL_PKGS="xorg-server xinit xf86-video-intel xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi libx11-dev libxft-dev libxinerama-dev pipewire pipewire-pulse wireplumber"
 log() { printf '[+] %s\n' "$*"; }
 fail() { printf '[!] %s\n' "$*" >&2; exit 1; }
 run_user() { su - "$USER_NAME" -c "$*"; }
