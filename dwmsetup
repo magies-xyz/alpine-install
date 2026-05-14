@@ -1,50 +1,162 @@
 #!/bin/sh
 set -eu
-USER_NAME="${1:-lima}"
+
 DWM_REPO="https://github.com/tonybanters/dwm"
-INSTALL_PKGS="xorg-server xinit xf86-video-intel xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi libx11-dev libxft-dev libxinerama-dev pipewire pipewire-pulse wireplumber"
+ROFI_REPO="https://github.com/tonybanters/rofi"
+ST_REPO="https://github.com/tonybanters/st"
+STATE_FILE="/tmp/installer-state"
+
 log() { printf '[+] %s\n' "$*"; }
+step() { printf '\n== %s ==\n' "$*\n"; }
 fail() { printf '[!] %s\n' "$*" >&2; exit 1; }
+
+mark_done() { echo "$1" >> "$STATE_FILE"; }
+is_done() { grep -qx "$1" "$STATE_FILE" 2>/dev/null; }
+
 run_user() { su - "$USER_NAME" -c "$*"; }
+
+ask() {
+  printf "%s: " "$1"
+  read -r reply
+  printf "%s" "$reply"
+}
+
+confirm() {
+  printf "%s [y/N]: " "$1"
+  read -r ans
+  case "$ans" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+pick_wm() {
+  printf "\nSelect environment:\n"
+  printf "1) dwm\n2) xfce\n> "
+  read -r choice
+  case "$choice" in
+    1) WM="dwm" ;;
+    2) WM="xfce" ;;
+    *) fail "invalid selection" ;;
+  esac
+}
+
+validate_user() {
+  case "$USER_NAME" in
+    ""|*[!a-z0-9_-]*)
+      fail "invalid username (a-z 0-9 _ - only)"
+      ;;
+  esac
+
+  if id "$USER_NAME" >/dev/null 2>&1; then
+    fail "user already exists: $USER_NAME"
+  fi
+}
+
+USER_NAME="${1:-}"
+
 [ "$(id -u)" -eq 0 ] || fail "run as root"
 command -v apk >/dev/null || fail "apk not found"
-log "updating system..."
+
+step "User setup"
+
+if [ -z "${USER_NAME:-}" ]; then
+  printf "username: "
+  read -r USER_NAME
+fi
+
+USER_NAME="${USER_NAME:-lima}"
+validate_user
+
+pick_wm
+
+XFCE_PACKAGES="xorg-server xinit xf86-input-libinput wget curl doas git dbus elogind vim alacritty rofi libx11-dev libxinerama-dev pipewire wireplumber pipewire-pulse xfce4 xfce4-terminal xfce4-panel xfce4-session xfce4-settings lightdm"
+
+DWM_PACKAGES="xorg-server xinit xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi libx11-dev libxft-dev libxinerama-dev pipewire pipewire-pulse wireplumber"
+
+case "$WM" in
+  xfce) INSTALL_PKGS="$XFCE_PACKAGES" ;;
+  dwm) INSTALL_PKGS="$DWM_PACKAGES" ;;
+esac
+
+step "System update"
 apk update
 apk upgrade
-log "installing packages..."
+
+step "Installing packages"
+# shellcheck disable=SC2086
 apk add $INSTALL_PKGS
-if ! id -u "$USER_NAME" >/dev/null 2>&1; then
-log "creating user: $USER_NAME"
+
+step "Creating user"
 adduser -D -G wheel "$USER_NAME"
-fi
-for grp in audio video input; do
-addgroup "$USER_NAME" "$grp" 2>/dev/null || true
+
+for g in audio video input; do
+  addgroup "$USER_NAME" "$g" 2>/dev/null || true
 done
-log "enabling services..."
-rc-update add dbus >/dev/null 2>&1 || true
-rc-update add elogind >/dev/null 2>&1 || true
-rc-service dbus start || true
-rc-service elogind start || true
-log "setting up dwm..."
-run_user "git clone https://github.com/tonybanters/dwm ~/dwm"
-run_user "cd ~/dwm && make" || fail "failed to build dwm"
-( cd "/home/$USER_NAME/dwm" && make install )
-log "configuring X..."
-XINIT="/home/$USER_NAME/.xinitrc"
-if [ ! -f "$XINIT" ]; then
-cat > "$XINIT" <<EOF
-#!/bin/sh
-setxkbmap br
-exec dwm
-EOF
+
+step "Services"
+rc-update add dbus default >/dev/null 2>&1 || true
+rc-update add elogind default >/dev/null 2>&1 || true
+rc-service dbus start >/dev/null 2>&1 || true
+rc-service elogind start >/dev/null 2>&1 || true
+
+step "WM setup"
+
+if [ "$WM" = "dwm" ]; then
+
+  if ! is_done "dwm_install"; then
+    log "installing dwm..."
+    run_user "git clone $DWM_REPO \$HOME/dwm || true"
+    run_user "cd \$HOME/dwm && make clean install" || fail "dwm build failed"
+    mark_done "dwm_install"
+  fi
+
+  if ! is_done "st_install"; then
+    log "installing st..."
+    run_user "git clone $ST_REPO \$HOME/st || true"
+    run_user "cd \$HOME/st && make clean install" || fail "st build failed"
+    mark_done "st_install"
+  fi
+
+  if ! is_done "rofi_install"; then
+    log "installing rofi..."
+    run_user "git clone $ROFI_REPO \$HOME/rofi || true"
+    run_user "cd \$HOME/rofi && make clean install" || fail "rofi build failed"
+    mark_done "rofi_install"
+  fi
+
 fi
-chown "$USER_NAME":"$USER_NAME" "$XINIT"
+
+step "X configuration"
+
+XINIT="/home/$USER_NAME/.xinitrc"
+
+if [ ! -f "$XINIT" ]; then
+  cat > "$XINIT" <<EOF
+#!/bin/sh
+export XDG_RUNTIME_DIR="/tmp/runtime-\$(id -un)"
+mkdir -p "\$XDG_RUNTIME_DIR"
+chmod 700 "\$XDG_RUNTIME_DIR"
+
+setxkbmap br
+
+EOF
+
+  if [ "$WM" = "xfce" ]; then
+    echo "exec startxfce4" >> "$XINIT"
+  else
+    echo "exec dwm" >> "$XINIT"
+  fi
+fi
+
+chown "$USER_NAME:$USER_NAME" "$XINIT"
 chmod +x "$XINIT"
-log "configuring doas..."
-grep -q '^permit persist :wheel' /etc/doas.conf 2>/dev/null || 
-printf '%s\n' 'permit persist :wheel' >> /etc/doas.conf
-log "done."
-printf '\n'
-printf 'login as: %s\n' "$USER_NAME"
-printf 'run: startx\n'
-printf '\n'
+
+step "doas"
+grep -q '^permit persist :wheel' /etc/doas.conf 2>/dev/null || \
+  echo 'permit persist :wheel' >> /etc/doas.conf
+
+step "done"
+
+printf "\nlogin: %s\n" "$USER_NAME"
+printf "start with: startx\n\n"
