@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+USER_NAME="${1:-lima}"
+DWM_REPO="https://github.com/tonybanters/dwm"
+INSTALL_PKGS="xorg-server xinit xf86-video-intel xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi"
+log() { printf '[+] %s\n' "$*"; }
+fail() { printf '[!] %s\n' "$*" >&2; exit 1; }
+run_user() { su - "$USER_NAME" -c "$*"; }
+[ "$(id -u)" -eq 0 ] || fail "run as root"
+command -v apk >/dev/null || fail "apk not found"
+log "updating system..."
+apk update
+apk upgrade
+log "installing packages..."
+apk add $INSTALL_PKGS
+if ! id -u "$USER_NAME" >/dev/null 2>&1; then
+log "creating user: $USER_NAME"
+adduser -D -G wheel "$USER_NAME"
+fi
+for grp in audio video input; do
+addgroup "$USER_NAME" "$grp" 2>/dev/null || true
+done
+log "enabling services..."
+rc-update add dbus >/dev/null 2>&1 || true
+rc-update add elogind >/dev/null 2>&1 || true
+rc-service dbus start || true
+rc-service elogind start || true
+log "setting up dwm..."
+run_user "git clone https://github.com/tonybanters/dwm ~/dwm"
+run_user "cd ~/dwm && make" || fail "failed to build dwm"
+( cd "/home/$USER_NAME/dwm" && make install )
+log "configuring X..."
+XINIT="/home/$USER_NAME/.xinitrc"
+if [ ! -f "$XINIT" ]; then
+cat > "$XINIT" <<EOF
+#!/bin/sh
+setxkbmap br
+exec dwm
+EOF
+fi
+chown "$USER_NAME":"$USER_NAME" "$XINIT"
+chmod +x "$XINIT"
+log "configuring doas..."
+grep -q '^permit persist :wheel' /etc/doas.conf 2>/dev/null || 
+printf '%s\n' 'permit persist :wheel' >> /etc/doas.conf
+log "done."
+printf '\n'
+printf 'login as: %s\n' "$USER_NAME"
+printf 'run: startx\n'
+printf '\n'
