@@ -41,10 +41,10 @@ sudo sh dwmsetup [USERNAME]
 
 ```bash
 # Create user "lima" (default)
-sudo sh dwmsetup
+sh dwmsetup
 
 # Create user "john"
-sudo sh dwmsetup john
+sh dwmsetup john
 ```
 
 ## What the Script Does
@@ -88,7 +88,7 @@ Currently hardcoded to Brazilian Portuguese (`br`). To change:
 
 Edit the `.xinitrc` file in your user's home directory:
 ```bash
-nano ~/.xinitrc
+vim ~/.xinitrc
 ```
 
 Change `setxkbmap br` to your desired layout (e.g., `setxkbmap us`).
