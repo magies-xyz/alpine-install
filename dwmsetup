@@ -72,7 +72,7 @@ pick_wm
 
 XFCE_PACKAGES="xorg-server xinit xf86-input-libinput wget curl doas git dbus elogind vim alacritty rofi libx11-dev libxinerama-dev pipewire wireplumber pipewire-pulse xfce4 xfce4-terminal xfce4-panel xfce4-session xfce4-settings lightdm"
 
-DWM_PACKAGES="xorg-server xinit xf86-input-libinput wget curl doas build-base git dbus elogind vim st rofi libx11-dev libxft-dev libxinerama-dev pipewire pipewire-pulse wireplumber"
+DWM_PACKAGES="xorg-server xinit xf86-input-libinput wget curl doas build-base git dbus elogind vim nvim rofi libx11-dev libxft-dev libxinerama-dev pipewire pipewire-pulse wireplumber"
 
 case "$WM" in
   xfce) INSTALL_PKGS="$XFCE_PACKAGES" ;;
@@ -120,9 +120,8 @@ if [ "$WM" = "dwm" ]; then
 
   if ! is_done "rofi_install"; then
     log "installing rofi..."
-    run_user "git clone $ROFI_REPO \$HOME/rofi || true"
-    run_user "cd \$HOME/rofi && make clean install" || fail "rofi build failed"
-    mark_done "rofi_install"
+    run_user "mkdir -p \$HOME/.config"
+    run_user "git clone $ROFI_REPO \$HOME/.config/rofi"
   fi
 
 fi
